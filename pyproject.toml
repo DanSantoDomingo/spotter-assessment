@@ -7,4 +7,5 @@ requires-python = ">=3.13"
 dependencies = [
     "django>=5.2,<6.0",
     "httpx>=0.28,<1",
+    "python-dotenv>=1,<2",
 ]
