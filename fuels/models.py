@@ -7,8 +7,7 @@ from django.db import models
 class FuelStation(models.Model):
     """A truckstop and its retail fuel price from the supplied CSV."""
 
-    # OPIS IDs repeat in the source data
-    opis_truckstop_id = models.PositiveIntegerField(db_index=True)
+    opis_truckstop_id = models.PositiveIntegerField(unique=True)
     truckstop_name = models.CharField(max_length=255)
     address = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
