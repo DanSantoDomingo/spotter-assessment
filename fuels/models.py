@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 
@@ -17,6 +17,20 @@ class FuelStation(models.Model):
         max_digits=12,
         decimal_places=8,
         validators=[MinValueValidator(Decimal("0.00000001"))],
+    )
+    latitude = models.DecimalField(
+        max_digits=8,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("-90")), MaxValueValidator(Decimal("90"))],
+    )
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("-180")), MaxValueValidator(Decimal("180"))],
     )
 
     def __str__(self):
