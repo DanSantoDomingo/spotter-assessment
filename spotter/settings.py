@@ -22,6 +22,18 @@ load_dotenv(BASE_DIR / '.env', override=False, encoding='utf-8-sig')
 
 ORS_API_KEY = os.getenv('ORS_API_KEY', '')
 
+# A separate, persistent cache for external location and routing responses.
+CACHES = {
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    'routing': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': BASE_DIR / '.routing-cache',
+        'OPTIONS': {'MAX_ENTRIES': 5000},
+    },
+}
+GEOCODING_CACHE_SECONDS = 7 * 24 * 60 * 60
+ROUTE_CACHE_SECONDS = 60 * 60
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -44,6 +56,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'ninja',
     'fuels.apps.FuelsConfig',
 ]
 
@@ -93,7 +106,7 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',  # noqa: E501
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',

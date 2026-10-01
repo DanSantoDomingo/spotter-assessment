@@ -16,22 +16,28 @@ class FuelStation(models.Model):
     retail_price = models.DecimalField(
         max_digits=12,
         decimal_places=8,
-        validators=[MinValueValidator(Decimal("0.00000001"))],
+        validators=[MinValueValidator(Decimal('0.00000001'))],
     )
     latitude = models.DecimalField(
         max_digits=8,
         decimal_places=6,
         null=True,
         blank=True,
-        validators=[MinValueValidator(Decimal("-90")), MaxValueValidator(Decimal("90"))],
+        validators=[
+            MinValueValidator(Decimal('-90')),
+            MaxValueValidator(Decimal('90')),
+        ],
     )
     longitude = models.DecimalField(
         max_digits=9,
         decimal_places=6,
         null=True,
         blank=True,
-        validators=[MinValueValidator(Decimal("-180")), MaxValueValidator(Decimal("180"))],
+        validators=[
+            MinValueValidator(Decimal('-180')),
+            MaxValueValidator(Decimal('180')),
+        ],
     )
 
     def __str__(self):
-        return f"{self.truckstop_name} ({self.city}, {self.state})"
+        return f'{self.truckstop_name} ({self.city}, {self.state})'
