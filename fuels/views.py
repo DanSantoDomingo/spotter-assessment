@@ -6,12 +6,13 @@ from django.http import HttpResponse, JsonResponse
 from ninja import Router
 from ninja.decorators import decorate_view
 
+from .constants import US_STATE_CODES
 from .models import FuelStation
 from .schemas import ErrorResponse, RoutePlanRequest, RoutePlanResponse
 from .services.cache import get_cached_route
 from .services.fuel_planner import InsufficientFuelCoverage
 from .services.itinerary import ItineraryError, plan_itinerary
-from .services.locations import US_STATE_CODES, LocationError, resolve_location
+from .services.locations import LocationError, resolve_location
 from .services.proximity import calculate_proximity_miles
 from .services.routes import METERS_PER_MILE, ORSRoutingClient, RoutingError
 from .services.stations import find_stations_along_route

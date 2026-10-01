@@ -8,18 +8,10 @@ from dataclasses import dataclass
 from django.conf import settings
 from django.core.cache import caches
 
+from fuels.constants import US_STATE_CODES
+
 from .cache import cache_key
 from .routes import ORSRoutingClient, _number, _point
-
-# fmt: off
-US_STATE_CODES = {
-    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID',
-    'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS',
-    'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK',
-    'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV',
-    'WI', 'WY', 'DC',
-}
-# fmt: on
 
 
 class LocationError(ValueError):

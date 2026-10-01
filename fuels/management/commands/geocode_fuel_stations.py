@@ -9,6 +9,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
+from fuels.constants import US_STATE_CODES
 from fuels.models import FuelStation
 from fuels.services.routes import ORSRoutingClient
 
@@ -16,61 +17,6 @@ from .providers.bulk_locations import BULK_PATTERN, BulkLocations
 from .providers.official_locations import PATTERNS, OfficialLocations
 from .providers.ors_locations import choose_coordinates, lookup_ors
 
-US_STATES = set(
-    [
-        'AL',
-        'AK',
-        'AZ',
-        'AR',
-        'CA',
-        'CO',
-        'CT',
-        'DE',
-        'FL',
-        'GA',
-        'HI',
-        'ID',
-        'IL',
-        'IN',
-        'IA',
-        'KS',
-        'KY',
-        'LA',
-        'ME',
-        'MD',
-        'MA',
-        'MI',
-        'MN',
-        'MS',
-        'MO',
-        'MT',
-        'NE',
-        'NV',
-        'NH',
-        'NJ',
-        'NM',
-        'NY',
-        'NC',
-        'ND',
-        'OH',
-        'OK',
-        'OR',
-        'PA',
-        'RI',
-        'SC',
-        'SD',
-        'TN',
-        'TX',
-        'UT',
-        'VT',
-        'VA',
-        'WA',
-        'WV',
-        'WI',
-        'WY',
-        'DC',
-    ]
-)
 MISSING_COORDINATES = Q(latitude__isnull=True) | Q(longitude__isnull=True)
 REPORT_FIELDS = ['station_id', 'opis_id', 'name', 'outcome', 'detail']
 
@@ -93,7 +39,7 @@ def _validate_options(options):
 
 def _station_batch(options):
     stations = FuelStation.objects.filter(
-        MISSING_COORDINATES, state__in=US_STATES, pk__gt=options['after_id']
+        MISSING_COORDINATES, state__in=US_STATE_CODES, pk__gt=options['after_id']
     ).order_by('pk')
     if options['state']:
         stations = stations.filter(state=options['state'])
@@ -170,7 +116,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--state',
             type=str.upper,
-            choices=sorted(US_STATES),
+            choices=sorted(US_STATE_CODES),
             help='Only process this US state/DC.',
         )
         parser.add_argument(
