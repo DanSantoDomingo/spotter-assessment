@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 
 from fuels.models import FuelStation
+from fuels.services.routes import ORSRoutingClient
 
 from .providers.bulk_locations import BULK_PATTERN, BulkLocations
 from .providers.official_locations import PATTERNS, OfficialLocations
@@ -127,6 +128,17 @@ def _request_headers(options):
     return headers
 
 
+def _provider_client(options, headers):
+    if options['provider'] == 'ors':
+        return ORSRoutingClient(api_key=headers['Authorization'])
+    return httpx.Client(
+        headers=headers,
+        timeout=httpx.Timeout(15.0, connect=5.0),
+        follow_redirects=True,
+        max_redirects=5,
+    )
+
+
 class Command(BaseCommand):
     help = (
         'Populate missing coordinates using ORS, official chain pages, '
@@ -224,12 +236,7 @@ class Command(BaseCommand):
                     writer.writeheader()
                     report_file.flush()
 
-            with httpx.Client(
-                headers=headers,
-                timeout=httpx.Timeout(15.0, connect=5.0),
-                follow_redirects=options['provider'] != 'ors',
-                max_redirects=5,
-            ) as client:
+            with _provider_client(options, headers) as client:
                 self.populate(client, batch, options, writer, report_file)
         except OSError:
             raise CommandError(

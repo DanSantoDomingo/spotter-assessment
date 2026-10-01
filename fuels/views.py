@@ -13,7 +13,7 @@ from .services.fuel_planner import InsufficientFuelCoverage
 from .services.itinerary import ItineraryError, plan_itinerary
 from .services.locations import US_STATE_CODES, LocationError, resolve_location
 from .services.proximity import calculate_proximity_miles
-from .services.routes import METERS_PER_MILE, RoutingError
+from .services.routes import METERS_PER_MILE, ORSRoutingClient, RoutingError
 from .services.stations import find_stations_along_route
 
 router = Router(tags=['Routes'])
@@ -66,29 +66,33 @@ def plan_route(request, payload: RoutePlanRequest, response: HttpResponse):
 
     field = 'start'
     try:
-        start, start_hit = resolve_location(payload.start)
-        field = 'end'
-        end, end_hit = resolve_location(payload.end)
-        route, route_hit = get_cached_route(start.coordinates, end.coordinates)
-        candidates = find_stations_along_route(
-            route,
-            ratio=ratio,
-            max_miles=cap,
-            stations=FuelStation.objects.filter(state__in=US_STATE_CODES),
-        )
-        proximity = calculate_proximity_miles(
-            route.distance_miles, ratio=ratio, max_miles=cap
-        )
-        itinerary = plan_itinerary(
-            start.coordinates,
-            end.coordinates,
-            route,
-            candidates,
-            starting_fuel_gallons=payload.starting_fuel_gallons,
-            base_cache_hit=route_hit,
-        )
-        route, plan = itinerary.route, itinerary.plan
-        route_hit = route_hit and itinerary.cache_hit
+        with ORSRoutingClient() as client:
+            start, start_hit = resolve_location(payload.start, client=client)
+            field = 'end'
+            end, end_hit = resolve_location(payload.end, client=client)
+            route, route_hit = get_cached_route(
+                start.coordinates, end.coordinates, client=client
+            )
+            candidates = find_stations_along_route(
+                route,
+                ratio=ratio,
+                max_miles=cap,
+                stations=FuelStation.objects.filter(state__in=US_STATE_CODES),
+            )
+            proximity = calculate_proximity_miles(
+                route.distance_miles, ratio=ratio, max_miles=cap
+            )
+            itinerary = plan_itinerary(
+                start.coordinates,
+                end.coordinates,
+                route,
+                candidates,
+                starting_fuel_gallons=payload.starting_fuel_gallons,
+                base_cache_hit=route_hit,
+                client=client,
+            )
+            route, plan = itinerary.route, itinerary.plan
+            route_hit = route_hit and itinerary.cache_hit
     except LocationError as error:
         return _error(
             error.code, str(error), 422, field=field, candidates=error.candidates

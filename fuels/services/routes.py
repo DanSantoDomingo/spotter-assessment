@@ -10,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 DIRECTIONS_URL = (
     'https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson'
 )
+GEOCODING_URL = 'https://api.heigit.org/pelias/v1'
 METERS_PER_MILE = 1609.344
 MAX_WAYPOINTS = 50
 
@@ -125,43 +126,40 @@ def _parse_route(data, *, point_count=None):
         raise RoutingError('ORS returned an invalid route response.') from None
 
 
-def _raise_route_error(response):
+def _raise_response_error(response, service):
     code = None
     with suppress(ValueError, AttributeError):
         code = response.json().get('error', {}).get('code')
     if response.status_code in (401, 403):
         message = 'ORS rejected the API key or its permissions.'
     elif response.status_code == 429:
-        message = 'ORS routing rate limit reached. Try again later.'
-    elif code in (2009, 2010):
+        message = f'ORS {service} rate limit reached. Try again later.'
+    elif service == 'routing' and code in (2009, 2010):
         message = 'ORS could not find a drivable route between these coordinates.'
     elif response.status_code >= 500:
-        message = 'ORS routing service is temporarily unavailable.'
+        message = f'ORS {service} service is temporarily unavailable.'
     else:
-        message = f'ORS rejected the routing request (HTTP {response.status_code}).'
+        message = f'ORS rejected the {service} request (HTTP {response.status_code}).'
     raise RoutingError(
         message,
         status_code=response.status_code,
-        provider_code=code,
+        provider_code=code if service == 'routing' else None,
         retry_after=response.headers.get('Retry-After'),
     )
 
 
 class ORSRoutingClient:
+    """ORS directions and geocoding with one lazily opened HTTP connection pool.
+
+    Own one instance per request or command and close it with a context manager.
+    Fully cached requests need neither an HTTP client nor an API key.
+    """
+
     def __init__(self, api_key=None, *, transport=None):
-        if api_key is None:
-            api_key = getattr(settings, 'ORS_API_KEY', '')
-        if not isinstance(api_key, str) or not api_key.strip():
-            raise ImproperlyConfigured('Set ORS_API_KEY before requesting routes.')
-        self._client = httpx.Client(
-            headers={
-                'Authorization': api_key.strip(),
-                'Accept': 'application/geo+json',
-            },
-            timeout=httpx.Timeout(30.0, connect=5.0),
-            follow_redirects=False,
-            transport=transport,
-        )
+        self._api_key = api_key
+        self._transport = transport
+        self._client = None
+        self._closed = False
 
     def __enter__(self):
         return self
@@ -170,7 +168,86 @@ class ORSRoutingClient:
         self.close()
 
     def close(self):
-        self._client.close()
+        if self._client is not None:
+            self._client.close()
+        self._closed = True
+
+    def _http_client(self):
+        if self._closed:
+            raise RuntimeError('ORS client is closed.')
+        if self._client is None:
+            api_key = self._api_key
+            if api_key is None:
+                api_key = getattr(settings, 'ORS_API_KEY', '')
+            if not isinstance(api_key, str) or not api_key.strip():
+                raise ImproperlyConfigured(
+                    'Set ORS_API_KEY before making ORS requests.'
+                )
+            self._client = httpx.Client(
+                headers={'Authorization': api_key.strip()},
+                timeout=httpx.Timeout(30.0, connect=5.0),
+                follow_redirects=False,
+                transport=self._transport,
+            )
+        return self._client
+
+    def _request(self, method, url, *, service, **kwargs):
+        try:
+            response = self._http_client().request(method, url, **kwargs)
+        except httpx.TimeoutException:
+            raise RoutingError(f'ORS {service} request timed out.') from None
+        except httpx.RequestError:
+            raise RoutingError(
+                f'Could not connect to the ORS {service} service.'
+            ) from None
+        if response.status_code != 200:
+            _raise_response_error(response, service)
+        try:
+            return response.json()
+        except ValueError:
+            raise RoutingError('ORS returned invalid JSON.') from None
+
+    def _geocode(self, path, params):
+        data = self._request(
+            'GET',
+            f'{GEOCODING_URL}/{path}',
+            service='location',
+            params=params,
+            headers={'Accept': 'application/json'},
+            timeout=httpx.Timeout(15.0, connect=5.0),
+        )
+        try:
+            if data['type'] != 'FeatureCollection' or not isinstance(
+                data['features'], list
+            ):
+                raise ValueError
+            return data['features']
+        except (KeyError, TypeError, ValueError):
+            raise RoutingError('ORS returned an invalid location response.') from None
+
+    def search_location(
+        self, text, *, country='USA', layers=None, sources=None, size=10
+    ):
+        """Return raw candidates; callers apply their location matching rules."""
+        params = {'text': text, 'boundary.country': country, 'size': size}
+        if layers is not None:
+            params['layers'] = layers
+        if sources is not None:
+            params['sources'] = sources
+        return self._geocode('search', params)
+
+    def reverse_location(self, longitude, latitude, *, layers='country', size=1):
+        """Look up a coordinate without applying a country search bias."""
+        longitude, latitude = _point((longitude, latitude))
+        return self._geocode(
+            'reverse',
+            {
+                'point.lon': longitude,
+                'point.lat': latitude,
+                'layers': layers,
+                'size': size,
+            },
+        )
 
     def get_route(self, start, end, *, waypoints=()):
         """Return a driving route through start, ordered waypoints, and end.
@@ -184,27 +261,16 @@ class ORSRoutingClient:
         if len(points) > MAX_WAYPOINTS:
             raise ValueError(f'ORS supports at most {MAX_WAYPOINTS} waypoints.')
         via_stations = len(points) > 2
-        try:
-            response = self._client.post(
-                DIRECTIONS_URL,
-                json={
-                    'coordinates': [list(point) for point in points],
-                    'units': 'm',
-                    'instructions': via_stations,
-                    'elevation': False,
-                },
-            )
-        except httpx.TimeoutException:
-            raise RoutingError('ORS routing request timed out.') from None
-        except httpx.RequestError:
-            raise RoutingError(
-                'Could not connect to the ORS routing service.'
-            ) from None
-
-        if response.status_code != 200:
-            _raise_route_error(response)
-        try:
-            data = response.json()
-        except ValueError:
-            raise RoutingError('ORS returned invalid JSON.') from None
+        data = self._request(
+            'POST',
+            DIRECTIONS_URL,
+            service='routing',
+            headers={'Accept': 'application/geo+json'},
+            json={
+                'coordinates': [list(point) for point in points],
+                'units': 'm',
+                'instructions': via_stations,
+                'elevation': False,
+            },
+        )
         return _parse_route(data, point_count=len(points) if via_stations else None)

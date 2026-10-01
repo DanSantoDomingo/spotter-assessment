@@ -5,10 +5,9 @@ import re
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 
-import httpx
 from django.core.management.base import CommandError
 
-GEOCODING_URL = 'https://api.heigit.org/pelias/v1/search'
+from fuels.services.routes import RoutingError
 
 
 def normalize(value):
@@ -106,41 +105,6 @@ def choose_coordinates(features, station, min_confidence):
 def lookup_ors(client, station):
     query = f'{station.truckstop_name}, {station.city}, {station.state}'
     try:
-        response = client.get(
-            GEOCODING_URL,
-            params={
-                'text': query,
-                'boundary.country': 'USA',
-                'layers': 'venue,address',
-                'size': 5,
-            },
-        )
-    except httpx.TimeoutException:
-        raise CommandError('Geocoding timed out. Rerun to resume.') from None
-    except httpx.TransportError:
-        raise CommandError(
-            'Could not connect to the geocoder. Rerun to resume.'
-        ) from None
-    if response.status_code in (401, 403):
-        raise CommandError('Geocoder rejected the API key or its permissions.')
-    if response.status_code == 429:
-        raise CommandError(
-            'Geocoding rate limit/quota reached. Wait for it to reset before resuming.'
-        )
-    if not 200 <= response.status_code < 300:
-        raise CommandError(
-            f'Geocoder returned HTTP {response.status_code}. '
-            'Rerun after resolving the error.'
-        )
-    try:
-        data = response.json()
-        if data['type'] != 'FeatureCollection' or not isinstance(
-            data['features'], list
-        ):
-            raise ValueError
-        return data['features']
-    except (ValueError, KeyError, TypeError):
-        raise CommandError(
-            'Geocoder returned an invalid response. '
-            'No coordinates saved for this station.'
-        ) from None
+        return client.search_location(query, layers='venue,address', size=5)
+    except RoutingError as error:
+        raise CommandError(f'{error} Rerun after resolving the error.') from error

@@ -22,7 +22,14 @@ class Itinerary:
 
 
 def plan_itinerary(
-    start, end, base_route, candidates, *, starting_fuel_gallons, base_cache_hit=False
+    start,
+    end,
+    base_route,
+    candidates,
+    *,
+    starting_fuel_gallons,
+    base_cache_hit=False,
+    client=None,
 ):
     preliminary = plan_fuel_stops(
         base_route,
@@ -40,7 +47,7 @@ def plan_itinerary(
     waypoints = tuple(
         (float(station.longitude), float(station.latitude)) for station in selected
     )
-    route, cache_hit = get_cached_route(start, end, waypoints=waypoints)
+    route, cache_hit = get_cached_route(start, end, waypoints=waypoints, client=client)
     # Use returned leg distances, never the old nearest-point projections.
     progress = Decimal('0')
     actual_candidates = []

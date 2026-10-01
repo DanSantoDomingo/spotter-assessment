@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from contextlib import nullcontext
 
 from django.conf import settings
 from django.core.cache import caches
@@ -17,7 +18,7 @@ def cache_key(kind, value):
     return f'fuel-routing:v1:{kind}:{digest}'
 
 
-def get_cached_route(start, end, *, waypoints=()):
+def get_cached_route(start, end, *, waypoints=(), client=None):
     """Return (route, cache_hit). Direction and coordinate precision are preserved."""
     start, end = _point(start), _point(end)
     waypoints = tuple(_point(point) for point in waypoints)
@@ -26,7 +27,7 @@ def get_cached_route(start, end, *, waypoints=()):
     route = cache.get(key)
     if route is not None:
         return route, True
-    with ORSRoutingClient() as client:
-        route = client.get_route(start, end, waypoints=waypoints)
+    with nullcontext(client) if client is not None else ORSRoutingClient() as ors:
+        route = ors.get_route(start, end, waypoints=waypoints)
     cache.set(key, route, timeout=settings.ROUTE_CACHE_SECONDS)
     return route, False

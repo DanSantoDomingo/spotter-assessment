@@ -2,17 +2,15 @@
 
 import re
 import unicodedata
+from contextlib import nullcontext
 from dataclasses import dataclass
 
-import httpx
 from django.conf import settings
 from django.core.cache import caches
-from django.core.exceptions import ImproperlyConfigured
 
 from .cache import cache_key
-from .routes import RoutingError, _number, _point
+from .routes import ORSRoutingClient, _number, _point
 
-GEOCODING_URL = 'https://api.heigit.org/pelias/v1'
 # fmt: off
 US_STATE_CODES = {
     'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID',
@@ -45,43 +43,6 @@ def validate_location(value):
             raise ValueError('Place names/addresses must contain 2 to 300 characters.')
         return text
     return _point(value)
-
-
-def _request(path, params):
-    key = getattr(settings, 'ORS_API_KEY', '')
-    if not isinstance(key, str) or not key.strip():
-        raise ImproperlyConfigured('Set ORS_API_KEY before resolving locations.')
-    try:
-        with httpx.Client(
-            headers={'Authorization': key.strip(), 'Accept': 'application/json'},
-            timeout=httpx.Timeout(15, connect=5),
-            follow_redirects=False,
-        ) as client:
-            response = client.get(f'{GEOCODING_URL}/{path}', params=params)
-    except httpx.TimeoutException:
-        raise RoutingError('ORS location lookup timed out.') from None
-    except httpx.RequestError:
-        raise RoutingError('Could not connect to the ORS location service.') from None
-    if response.status_code != 200:
-        message = 'ORS location lookup failed.'
-        if response.status_code == 429:
-            message = 'ORS location rate limit reached. Try again later.'
-        elif response.status_code in (401, 403):
-            message = 'ORS rejected the API key or its permissions.'
-        raise RoutingError(
-            message,
-            status_code=response.status_code,
-            retry_after=response.headers.get('Retry-After'),
-        )
-    try:
-        data = response.json()
-        if data['type'] != 'FeatureCollection' or not isinstance(
-            data['features'], list
-        ):
-            raise ValueError
-        return data['features']
-    except (ValueError, KeyError, TypeError):
-        raise RoutingError('ORS returned an invalid location response.') from None
 
 
 def _match_place(feature, *, city, state):
@@ -140,7 +101,7 @@ def _choose_place(features, *, city=None, state=None):
     return next(iter(matches.values()))
 
 
-def resolve_location(value):
+def resolve_location(value, *, client=None):
     """Return (resolved_location, cache_hit); a cache miss makes one ORS call.
 
     Coordinate inputs use a country-layer lookup without a US search bias.
@@ -158,7 +119,7 @@ def resolve_location(value):
     if is_text:
         params = {
             'text': value,
-            'boundary.country': 'USA',
+            'country': 'USA',
             'size': 10,
             'layers': 'venue,address,locality,borough,neighbourhood',
         }
@@ -172,18 +133,12 @@ def resolve_location(value):
             # example El Paso). Use the populated-place gazetteer for City, ST,
             # and require exact city/state evidence, not just confidence=1.
             params.update(sources='geonames', layers='locality,borough,neighbourhood')
-        features = _request('search', params)
+        with nullcontext(client) if client is not None else ORSRoutingClient() as ors:
+            features = ors.search_location(**params)
         result = _choose_place(features, city=city, state=state)
     else:
-        features = _request(
-            'reverse',
-            {
-                'point.lon': value[0],
-                'point.lat': value[1],
-                'layers': 'country',
-                'size': 1,
-            },
-        )
+        with nullcontext(client) if client is not None else ORSRoutingClient() as ors:
+            features = ors.reverse_location(*value)
         try:
             props = features[0]['properties']
             is_us = props.get('layer') == 'country' and props.get('country_a') in (
