@@ -5,3 +5,4 @@ __pycache__
 .env
 .geocoding-cache/
 .routing-cache/
+.ruff_cache
