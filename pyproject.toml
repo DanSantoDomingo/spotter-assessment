@@ -6,6 +6,45 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "django>=5.2,<6.0",
+    "django-ninja>=1.6,<2",
     "httpx>=0.28,<1",
     "python-dotenv>=1,<2",
+]
+
+[tool.vulture]
+exclude = ["*/migrations/*.py"]
+ignore_names = ["app_label", "kw", "model_name"]
+min_confidence = 80
+paths = ["fuels", "spotter", "manage.py"]
+sort_by_size = true
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+    "C90", # complexity
+    "RUF", # Ruff-specific rules
+    "T20", # print statements
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"**/migrations/*.py" = ["E501", "RUF012"]
+"**/{admin,forms,models}.py" = ["RUF012"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "ruff>=0.16.9",
+    "vulture>=2.16",
 ]
