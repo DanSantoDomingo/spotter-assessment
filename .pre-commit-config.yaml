@@ -18,10 +18,11 @@ repos:
         args: [--fix, --exit-non-zero-on-fix]
       - id: ruff-format
 
-  # - repo: local
-  #   hooks:
-  #     - id: vulture
-  #       name: vulture
-  #       entry: uv run vulture
-  #       language: system
-  #       pass_filenames: false
+  - repo: local
+    hooks:
+      - id: vulture
+        name: vulture
+        entry: uv run vulture
+        language: system
+        types: [python]
+        pass_filenames: false
